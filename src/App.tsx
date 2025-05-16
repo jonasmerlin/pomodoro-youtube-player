@@ -60,6 +60,10 @@ const PomodoroYouTubePlayer: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<number>(workMinutes * 60);
   const [timerComplete, setTimerComplete] = useState<boolean>(false);
   const intervalRef = useRef<number | null>(null);
+
+  // Timestamp refs for accurate timing
+  const startTimeRef = useRef<number>(0);
+  const endTimeRef = useRef<number>(0);
   
   // YouTube API loading state
   const [apiLoaded, setApiLoaded] = useState<boolean>(false);
@@ -82,7 +86,6 @@ const PomodoroYouTubePlayer: React.FC = () => {
   
   // Load YouTube API
   useEffect(() => {
-    // Load YouTube API if not already loaded
     if (!window.YT) {
       const tag = document.createElement('script');
       tag.src = 'https://www.youtube.com/iframe_api';
@@ -113,6 +116,20 @@ const PomodoroYouTubePlayer: React.FC = () => {
     };
   }, []);
   
+  // Visibility detection to resync timer
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!document.hidden && isRunning && !timerComplete) {
+        // Recalculate endTime based on current time
+        const now = Date.now();
+        const remaining = endTimeRef.current - now;
+        setTimeLeft(Math.max(0, Math.ceil(remaining / 1000)));
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [isRunning, timerComplete]);
+  
   // Initialize or update YouTube player when video ID changes
   useEffect(() => {
     if (apiLoaded && videoId) {
@@ -120,7 +137,6 @@ const PomodoroYouTubePlayer: React.FC = () => {
         playerRef.current.loadVideoById(videoId);
         resizePlayer();
       } else {
-        // Create player without specific dimensions - will size to container
         playerRef.current = new window.YT.Player('youtube-player', {
           videoId: videoId,
           playerVars: {
@@ -133,7 +149,6 @@ const PomodoroYouTubePlayer: React.FC = () => {
               resizePlayer();
             },
             onStateChange: (event) => {
-              // If video ends (state = 0) and we're in a work session, restart it
               if (event.data === 0 && isWorking && isRunning) {
                 event.target.playVideo();
               }
@@ -155,47 +170,50 @@ const PomodoroYouTubePlayer: React.FC = () => {
     }
   }, [isWorking, isRunning]);
   
-  // Timer logic
+  // Timer logic with timestamp-based accuracy
   useEffect(() => {
     if (isRunning && !timerComplete) {
-      intervalRef.current = setInterval(() => {
-        setTimeLeft((prevTime) => {
-          if (prevTime <= 1) {
-            if (!intervalRef.current) return 0;
+      // On start or resume, set start and end timestamps
+      if (!intervalRef.current) {
+        startTimeRef.current = Date.now();
+        endTimeRef.current = startTimeRef.current + timeLeft * 1000;
+      }
+      
+      intervalRef.current = window.setInterval(() => {
+        const now = Date.now();
+        const remainingMs = endTimeRef.current - now;
+        if (remainingMs <= 0) {
+          clearInterval(intervalRef.current!);
+          intervalRef.current = null;
+          setTimeLeft(0);
 
-            clearInterval(intervalRef.current);
-            
-            // If we're working, switch to break (or next pomodoro)
-            if (isWorking) {
-              const nextPomodoro = currentPomodoro + 1;
-              
-              // Check if we've completed all pomodoros
-              if (nextPomodoro >= totalPomodoros) {
-                setTimerComplete(true);
-                setIsRunning(false);
-                return 0;
-              }
-              
+          // Switch states at end
+          if (isWorking) {
+            const nextPomodoro = currentPomodoro + 1;
+            if (nextPomodoro >= totalPomodoros) {
+              setTimerComplete(true);
+              setIsRunning(false);
+            } else {
               setIsWorking(false);
               setCurrentPomodoro(nextPomodoro);
-              return breakMinutes * 60;
-            } else {
-              // If we're on break, switch back to work
-              setIsWorking(true);
-              return workMinutes * 60;
+              setTimeLeft(breakMinutes * 60);
             }
+          } else {
+            setIsWorking(true);
+            setTimeLeft(workMinutes * 60);
           }
-          return prevTime - 1;
-        });
+          return;
+        }
+        setTimeLeft(Math.ceil(remainingMs / 1000));
       }, 1000);
     }
-    
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [isRunning, isWorking, timeLeft, breakMinutes, workMinutes, currentPomodoro, totalPomodoros, timerComplete]);
+  }, [isRunning, isWorking, breakMinutes, workMinutes, currentPomodoro, totalPomodoros, timerComplete]);
   
   // Handle URL input
   const handleUrlChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -215,7 +233,6 @@ const PomodoroYouTubePlayer: React.FC = () => {
   // Start/pause timer
   const toggleTimer = (): void => {
     if (timerComplete) {
-      // Reset timer if complete
       setIsWorking(true);
       setCurrentPomodoro(0);
       setTimeLeft(workMinutes * 60);
