@@ -298,6 +298,24 @@ const PomodoroYouTubePlayer: React.FC = () => {
       .padStart(2, "0")}`;
   };
 
+  // Update document title with time left
+  useEffect(() => {
+    const formattedTime = formatTime(timeLeft);
+    const status = isWorking ? "Work" : "Break";
+    
+    if (timerComplete) {
+      document.title = "Pomodoro Complete";
+    } else if (isRunning) {
+      document.title = `${formattedTime} - ${status} | Pomodoro`;
+    } else {
+      document.title = "Pomodoro YouTube Player";
+    }
+    
+    return () => {
+      document.title = "Pomodoro YouTube Player";
+    };
+  }, [timeLeft, isWorking, isRunning, timerComplete]);
+
   const setPreset = (workMins: number, breakMins: number): void => {
     setWorkMinutes(workMins);
     setBreakMinutes(breakMins);
