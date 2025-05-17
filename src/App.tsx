@@ -143,63 +143,63 @@ const PomodoroYouTubePlayer: React.FC = () => {
   }, [isRunning, timerComplete]);
 
   // Initialize or update YouTube player when video ID changes
-useEffect(() => {
-  if (apiLoaded && videoId) {
-    if (playerRef.current) {
-      playerRef.current.loadVideoById(videoId);
-      resizePlayer();
-    } else {
-      playerRef.current = new window.YT.Player('youtube-player', {
-        videoId: videoId,
-        playerVars: {
-          autoplay: isWorking && isRunning ? 1 : 0,
-          controls: 1,
-          rel: 0,
-        },
-        events: {
-          onReady: () => {
-            resizePlayer();
+  useEffect(() => {
+    if (apiLoaded && videoId) {
+      if (playerRef.current) {
+        playerRef.current.loadVideoById(videoId);
+        resizePlayer();
+      } else {
+        playerRef.current = new window.YT.Player("youtube-player", {
+          videoId: videoId,
+          playerVars: {
+            autoplay: isWorking && isRunning ? 1 : 0,
+            controls: 1,
+            rel: 0,
           },
-          onStateChange: (event) => {
-            // Loop video when it ends (regardless of timer state)
-            if (event.data === 0) {
-              event.target.playVideo();
-            }
-            
-            // Only sync with controls if change wasn't initiated by the app
-            if (!programmaticChangeRef.current) {
-              // When user plays the video, start the Pomodoro timer
-              if (event.data === 1 && !isRunningRef.current) {
-                setIsRunning(true);
+          events: {
+            onReady: () => {
+              resizePlayer();
+            },
+            onStateChange: (event) => {
+              // Loop video when it ends (regardless of timer state)
+              if (event.data === 0) {
+                event.target.playVideo();
               }
-              
-              // When user pauses the video, pause the Pomodoro timer
-              if (event.data === 2 && isRunningRef.current) {
-                setIsRunning(false);
+
+              // Only sync with controls if change wasn't initiated by the app
+              if (!programmaticChangeRef.current) {
+                // When user plays the video, start the Pomodoro timer
+                if (event.data === 1 && !isRunningRef.current) {
+                  setIsRunning(true);
+                }
+
+                // When user pauses the video, pause the Pomodoro timer
+                if (event.data === 2 && isRunningRef.current) {
+                  setIsRunning(false);
+                }
               }
-            }
+            },
           },
-        },
-      });
+        });
+      }
     }
-  }
-}, [apiLoaded, videoId]);
+  }, [apiLoaded, videoId]);
 
   // Control video playback based on timer state
-useEffect(() => {
-  if (playerRef.current && playerRef.current.playVideo) {
-    programmaticChangeRef.current = true;
-    if (isWorking && isRunning) {
-      playerRef.current.playVideo();
-    } else {
-      playerRef.current.pauseVideo();
+  useEffect(() => {
+    if (playerRef.current && playerRef.current.playVideo) {
+      programmaticChangeRef.current = true;
+      if (isWorking && isRunning) {
+        playerRef.current.playVideo();
+      } else {
+        playerRef.current.pauseVideo();
+      }
+      // Reset flag after a short delay
+      setTimeout(() => {
+        programmaticChangeRef.current = false;
+      }, 100);
     }
-    // Reset flag after a short delay
-    setTimeout(() => {
-      programmaticChangeRef.current = false;
-    }, 100);
-  }
-}, [isWorking, isRunning]);
+  }, [isWorking, isRunning]);
 
   // Timer logic with timestamp-based accuracy
   useEffect(() => {
@@ -298,6 +298,20 @@ useEffect(() => {
       .padStart(2, "0")}`;
   };
 
+  const setPreset = (workMins: number, breakMins: number): void => {
+    setWorkMinutes(workMins);
+    setBreakMinutes(breakMins);
+
+    // Update the current timer display if not running
+    if (!isRunning) {
+      if (isWorking) {
+        setTimeLeft(workMins * 60);
+      } else {
+        setTimeLeft(breakMins * 60);
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col items-center p-8 max-w-5xl mx-auto my-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl">
       <h1 className="text-3xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-indigo-600">
@@ -316,7 +330,7 @@ useEffect(() => {
           />
           <button
             onClick={handleUrlSubmit}
-            className="bg-gradient-to-r from-indigo-500 to-violet-500 text-white px-6 py-3 rounded-lg hover:shadow-md transition-all duration-300 font-medium"
+            className="bg-gradient-to-r from-indigo-500 to-violet-500 text-white px-6 py-3 rounded-lg hover:shadow-md transition-all duration-300 font-medium cursor-pointer"
           >
             Load Video
           </button>
@@ -324,7 +338,7 @@ useEffect(() => {
       </div>
 
       {/* Pomodoro settings */}
-      <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
         <div className="bg-white p-4 rounded-xl shadow-sm">
           <label className="mb-2 font-medium text-gray-700 block">
             Work Minutes
@@ -381,6 +395,34 @@ useEffect(() => {
         </div>
       </div>
 
+      {/* Preset buttons - Updated section */}
+      <div className="w-full mb-8">
+        <div className="flex gap-2 flex-row justify-start items-center">
+          <div className="text-xs text-gray-600">Common Timings:</div>
+          <button
+            onClick={() => setPreset(25, 5)}
+            className="bg-white border border-indigo-200 text-indigo-700 px-3 py-1 text-sm rounded-md hover:bg-indigo-50 transition-colors duration-200 shadow-sm disabled:opacity-40 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:shadow-none disabled:cursor-not-allowed cursor-pointer"
+            disabled={isRunning}
+          >
+            25/5
+          </button>
+          <button
+            onClick={() => setPreset(45, 15)}
+            className="bg-white border border-indigo-200 text-indigo-700 px-3 py-1 text-sm rounded-md hover:bg-indigo-50 transition-colors duration-200 shadow-sm disabled:opacity-40 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:shadow-none disabled:cursor-not-allowed cursor-pointer"
+            disabled={isRunning}
+          >
+            45/15
+          </button>
+          <button
+            onClick={() => setPreset(60, 30)}
+            className="bg-white border border-indigo-200 text-indigo-700 px-3 py-1 text-sm rounded-md hover:bg-indigo-50 transition-colors duration-200 shadow-sm disabled:opacity-40 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:shadow-none disabled:cursor-not-allowed cursor-pointer"
+            disabled={isRunning}
+          >
+            60/30
+          </button>
+        </div>
+      </div>
+
       {/* Timer display */}
       <div className="w-full mb-8">
         <div className="bg-white rounded-2xl shadow-md overflow-hidden">
@@ -418,7 +460,7 @@ useEffect(() => {
           <div className="flex justify-center gap-4 p-4 bg-white">
             <button
               onClick={toggleTimer}
-              className={`px-8 py-3 rounded-lg font-medium shadow-sm transition-all duration-300 ${
+              className={`px-8 py-3 rounded-lg font-medium shadow-sm transition-all duration-300 cursor-pointer ${
                 isRunning
                   ? "bg-amber-500 hover:bg-amber-600 text-white"
                   : "bg-gradient-to-r from-emerald-500 to-teal-500 hover:shadow-md text-white"
@@ -428,7 +470,7 @@ useEffect(() => {
             </button>
             <button
               onClick={resetTimer}
-              className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-8 py-3 rounded-lg font-medium shadow-sm transition-all duration-300 disabled:opacity-50"
+              className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-8 py-3 rounded-lg font-medium shadow-sm transition-all duration-300 disabled:opacity-50 cursor-pointer"
               disabled={!isRunning && timeLeft === workMinutes * 60}
             >
               Reset
