@@ -15,6 +15,15 @@ interface YouTubeEvent {
   target: YouTubePlayer;
 }
 
+// Define video history item interface
+interface VideoHistoryItem {
+  id: string;
+  url: string;
+  title?: string;
+  thumbnail?: string;
+  addedAt: number;
+}
+
 // Define YouTube API interface
 interface YouTubeWindow extends Window {
   YT: {
@@ -33,7 +42,7 @@ interface YouTubeWindow extends Window {
           onStateChange: (event: YouTubeEvent) => void;
           onReady?: (event: { target: YouTubePlayer }) => void;
         };
-      }
+      },
     ) => YouTubePlayer;
   };
   onYouTubeIframeAPIReady: () => void;
@@ -51,6 +60,8 @@ const PomodoroYouTubePlayer: React.FC = () => {
   // State for YouTube video
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [videoId, setVideoId] = useState<string>("");
+  const [videoHistory, setVideoHistory] = useState<VideoHistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState<boolean>(false);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const programmaticChangeRef = useRef<boolean>(false); // Track if changes are app-initiated
@@ -69,6 +80,102 @@ const PomodoroYouTubePlayer: React.FC = () => {
 
   // YouTube API loading state
   const [apiLoaded, setApiLoaded] = useState<boolean>(false);
+
+  // Load video history from localStorage on component mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem("pomodoro-video-history");
+    if (savedHistory) {
+      try {
+        const parsedHistory = JSON.parse(savedHistory);
+        setVideoHistory(parsedHistory);
+      } catch (error) {
+        console.error(
+          "Failed to parse video history from localStorage:",
+          error,
+        );
+      }
+    }
+  }, []);
+
+  // Save video history to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(
+      "pomodoro-video-history",
+      JSON.stringify(videoHistory),
+    );
+  }, [videoHistory]);
+
+  // Function to fetch video title and thumbnail from YouTube Data API
+  const fetchVideoData = async (
+    videoId: string,
+  ): Promise<{ title: string; thumbnail: string }> => {
+    try {
+      // Using the oEmbed API which doesn't require an API key
+      const response = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+      );
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          title: data.title || "Unknown Title",
+          thumbnail:
+            data.thumbnail_url ||
+            `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        };
+      }
+    } catch (error) {
+      console.error("Failed to fetch video data:", error);
+    }
+    return {
+      title: "Unknown Title",
+      thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+    };
+  };
+
+  // Function to add video to history
+  const addToHistory = async (id: string, url: string) => {
+    const existingIndex = videoHistory.findIndex((item) => item.id === id);
+
+    if (existingIndex !== -1) {
+      // Move existing video to top
+      const updatedHistory = [...videoHistory];
+      const [existingItem] = updatedHistory.splice(existingIndex, 1);
+      existingItem.addedAt = Date.now();
+      updatedHistory.unshift(existingItem);
+      setVideoHistory(updatedHistory);
+    } else {
+      // Fetch video title and thumbnail
+      const { title, thumbnail } = await fetchVideoData(id);
+
+      // Add new video to top
+      const newItem: VideoHistoryItem = {
+        id,
+        url,
+        title,
+        thumbnail,
+        addedAt: Date.now(),
+      };
+      setVideoHistory((prev) => [newItem, ...prev.slice(0, 19)]); // Keep only last 20 items
+    }
+  };
+
+  // Function to remove video from history
+  const removeFromHistory = (id: string) => {
+    setVideoHistory((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  // Function to clear all history
+  const clearHistory = () => {
+    setVideoHistory([]);
+  };
+
+  // Function to load video from history
+  const loadFromHistory = async (item: VideoHistoryItem) => {
+    setVideoUrl(item.url);
+    setVideoId(item.id);
+    setShowHistory(false);
+    await addToHistory(item.id, item.url);
+  };
 
   // Extract YouTube video ID from URL
   const extractVideoId = (url: string): string | null => {
@@ -260,10 +367,11 @@ const PomodoroYouTubePlayer: React.FC = () => {
   };
 
   // Handle URL submission
-  const handleUrlSubmit = (): void => {
+  const handleUrlSubmit = async (): Promise<void> => {
     const id = extractVideoId(videoUrl);
     if (id) {
       setVideoId(id);
+      await addToHistory(id, videoUrl);
     } else {
       alert("Invalid YouTube URL. Please enter a valid URL.");
     }
@@ -302,7 +410,7 @@ const PomodoroYouTubePlayer: React.FC = () => {
   useEffect(() => {
     const formattedTime = formatTime(timeLeft);
     const status = isWorking ? "Work" : "Break";
-    
+
     if (timerComplete) {
       document.title = "Pomodoro Complete";
     } else if (isRunning) {
@@ -310,7 +418,7 @@ const PomodoroYouTubePlayer: React.FC = () => {
     } else {
       document.title = "Pomodoro YouTube Player";
     }
-    
+
     return () => {
       document.title = "Pomodoro YouTube Player";
     };
@@ -352,7 +460,267 @@ const PomodoroYouTubePlayer: React.FC = () => {
           >
             Load Video
           </button>
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-lg transition-all duration-300 font-medium cursor-pointer"
+            title="Show video history"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              ></path>
+            </svg>
+          </button>
         </div>
+
+        {/* Video History */}
+        {showHistory && (
+          <div className="mt-6 bg-gradient-to-br from-white via-slate-50 to-white rounded-2xl shadow-xl border border-slate-200/60 backdrop-blur-sm overflow-hidden">
+            <div className="bg-gradient-to-r from-violet-50 via-indigo-50 to-purple-50 px-6 py-5 border-b border-slate-200/50">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                    <svg
+                      className="w-5 h-5 text-white"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-800 tracking-tight">
+                      Video History
+                    </h3>
+                    <p className="text-xs text-gray-500 font-medium">
+                      {videoHistory.length} video
+                      {videoHistory.length !== 1 ? "s" : ""} saved
+                    </p>
+                  </div>
+                </div>
+                {videoHistory.length > 0 && (
+                  <button
+                    onClick={clearHistory}
+                    className="group relative px-4 py-2 bg-gradient-to-r from-red-50 to-pink-50 hover:from-red-100 hover:to-pink-100 text-red-600 hover:text-red-700 text-sm font-semibold rounded-xl border border-red-200/50 hover:border-red-300 transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md transform hover:scale-105"
+                  >
+                    <span className="flex items-center space-x-2">
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                      <span>Clear All</span>
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+              {videoHistory.length === 0 ? (
+                <div className="px-6 py-12 text-center">
+                  <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+                    <svg
+                      className="w-8 h-8 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="1.5"
+                        d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                      />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-600 mb-2">
+                    No videos yet
+                  </h4>
+                  <p className="text-sm text-gray-500 leading-relaxed max-w-sm mx-auto">
+                    Start by adding a YouTube video URL above. Your recently
+                    played videos will appear here for quick access.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-2">
+                  {videoHistory.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className={`group relative bg-white hover:bg-gradient-to-r hover:from-slate-50 hover:to-white rounded-2xl p-4 mb-3 border border-slate-200/50 hover:border-indigo-200 transition-all duration-200 cursor-pointer shadow-sm hover:shadow-lg ${
+                        index === 0
+                          ? "ring-2 ring-indigo-100 bg-gradient-to-r from-indigo-50/30 to-purple-50/30"
+                          : ""
+                      }`}
+                      onClick={() => loadFromHistory(item)}
+                    >
+                      {index === 0 && (
+                        <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-r from-emerald-400 to-cyan-500 rounded-full flex items-center justify-center shadow-lg">
+                          <svg
+                            className="w-3 h-3 text-white"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </div>
+                      )}
+
+                      <div className="flex items-center space-x-4">
+                        <div className="relative flex-shrink-0">
+                          <div className="w-20 h-14 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl overflow-hidden shadow-md ring-2 ring-white group-hover:ring-indigo-200 transition-all duration-150">
+                            {item.thumbnail ? (
+                              <img
+                                src={item.thumbnail}
+                                alt={item.title || "Video thumbnail"}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src =
+                                    `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`;
+                                }}
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                                <svg
+                                  className="w-6 h-6 text-gray-500"
+                                  fill="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M8 5v14l11-7z" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-150">
+                            <div className="w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow-lg transform scale-0 group-hover:scale-100 transition-transform duration-150">
+                              <svg
+                                className="w-4 h-4 text-indigo-600 ml-0.5"
+                                fill="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-start justify-between">
+                            <h4 className="text-sm font-bold text-gray-800 group-hover:text-indigo-700 transition-colors duration-150 leading-tight line-clamp-2">
+                              {item.title || (
+                                <span className="text-gray-500 italic">
+                                  Loading title...
+                                </span>
+                              )}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center space-x-2 text-xs">
+                            <div className="flex items-center space-x-1 text-gray-500">
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.1a3 3 0 105.656-5.656l-1.102 1.1a3 3 0 01-5.656 0l4-4z"
+                                />
+                              </svg>
+                              <span className="truncate max-w-32 lg:max-w-48">
+                                {item.url}
+                              </span>
+                            </div>
+                            <span className="text-gray-300">•</span>
+                            <div className="flex items-center space-x-1 text-gray-500">
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                              </svg>
+                              <span>
+                                {new Date(item.addedAt).toLocaleDateString(
+                                  undefined,
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  },
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFromHistory(item.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 flex-shrink-0 w-8 h-8 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 rounded-lg transition-all duration-150 cursor-pointer shadow-sm hover:shadow-md flex items-center justify-center"
+                          title="Remove from history"
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth="2"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-transparent to-indigo-50/0 group-hover:to-indigo-50/50 transition-all duration-200 pointer-events-none" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pomodoro settings */}
