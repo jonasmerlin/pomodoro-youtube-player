@@ -397,6 +397,40 @@ const PomodoroYouTubePlayer: React.FC = () => {
     setTimerComplete(false);
   };
 
+  // Skip current session
+  const skipSession = (): void => {
+    if (timerComplete) return;
+
+    // Clear current timer
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (isWorking) {
+      // Currently working, skip to break
+      const nextPomodoro = currentPomodoro + 1;
+      if (nextPomodoro >= totalPomodoros) {
+        setTimerComplete(true);
+        setIsRunning(false);
+      } else {
+        setIsWorking(false);
+        setCurrentPomodoro(nextPomodoro);
+        setTimeLeft(breakMinutes * 60);
+        // Reset timer timestamps for next session
+        startTimeRef.current = Date.now();
+        endTimeRef.current = startTimeRef.current + breakMinutes * 60 * 1000;
+      }
+    } else {
+      // Currently on break, skip to next work session
+      setIsWorking(true);
+      setTimeLeft(workMinutes * 60);
+      // Reset timer timestamps for next session
+      startTimeRef.current = Date.now();
+      endTimeRef.current = startTimeRef.current + workMinutes * 60 * 1000;
+    }
+  };
+
   // Format time as MM:SS
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -843,7 +877,7 @@ const PomodoroYouTubePlayer: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-center gap-4 p-4 bg-white">
+          <div className="flex justify-center gap-4 p-4 bg-white relative">
             <button
               onClick={toggleTimer}
               className={`px-8 py-3 rounded-lg font-medium shadow-sm transition-all duration-300 cursor-pointer ${
@@ -860,6 +894,27 @@ const PomodoroYouTubePlayer: React.FC = () => {
               disabled={!isRunning && timeLeft === workMinutes * 60}
             >
               Reset
+            </button>
+            <button
+              onClick={skipSession}
+              className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 px-2 py-1 rounded-md hover:bg-gray-50 transition-all duration-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400 cursor-pointer flex items-center gap-1"
+              disabled={timerComplete}
+              title={isWorking ? "Skip to break" : "Skip to next work session"}
+            >
+              <span className="text-xs font-normal">Skip</span>
+              <svg
+                className="w-3 h-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
             </button>
           </div>
         </div>
