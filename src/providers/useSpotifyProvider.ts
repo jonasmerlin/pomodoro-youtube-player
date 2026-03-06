@@ -35,15 +35,10 @@ const SCOPES = [
 ];
 
 function getRedirectUri(): string {
-  // Spotify requires HTTPS for redirect URIs. In local dev we use 127.0.0.1
-  // because Spotify allows https://127.0.0.1:PORT as a redirect URI.
-  // In production, just use the current origin + /spotify/quick (the route
-  // that handles the auth callback).
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    const port = window.location.port || "5173";
-    return `https://127.0.0.1:${port}`;
-  }
-  return window.location.origin;
+  // Must match the redirect URI registered in the Spotify app dashboard.
+  // Points to the dedicated /spotify/callback route which handles the code
+  // exchange independently, then redirects back to the originating page.
+  return `${window.location.origin}/spotify/callback`;
 }
 
 // ---- PKCE helpers ----
@@ -217,58 +212,13 @@ export function useSpotifyProvider(): UseSpotifyProviderResult {
     }
   }, [refreshAccessToken]);
 
-  // ---- Exchange auth code for token ----
-  const getToken = useCallback(async (code: string): Promise<string | null> => {
-    setIsLoading(true);
-    try {
-      const codeVerifier = localStorage.getItem("spotify_code_verifier");
-      if (!codeVerifier) throw new Error("No code verifier found in storage");
-
-      const payload = new URLSearchParams();
-      payload.append("client_id", CLIENT_ID);
-      payload.append("grant_type", "authorization_code");
-      payload.append("code", code);
-      payload.append("redirect_uri", REDIRECT_URI);
-      payload.append("code_verifier", codeVerifier);
-
-      const response = await fetch(TOKEN_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: payload,
-      });
-
-      if (!response.ok) throw new Error("HTTP status " + response.status);
-
-      const data = await response.json() as SpotifyTokenResponse;
-
-      const newExpiresAt = Date.now() + data.expires_in * 1000;
-      localStorage.setItem("spotify_access_token", data.access_token);
-      localStorage.setItem("spotify_refresh_token", data.refresh_token);
-      localStorage.setItem("spotify_expires_in", String(data.expires_in));
-      localStorage.setItem("spotify_expires_at", String(newExpiresAt));
-      setToken(data.access_token);
-
-      // Schedule refresh
-      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-      const delay = Math.max(5_000, newExpiresAt - Date.now() - 60_000);
-      refreshTimeoutRef.current = window.setTimeout(() => {
-        refreshAccessToken();
-      }, delay);
-
-      return data.access_token;
-    } catch (err) {
-      setError(`Failed to get token: ${(err as Error).message}`);
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [REDIRECT_URI, refreshAccessToken]);
-
   // ---- Login ----
   const handleLogin = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     const codeVerifier = generateCodeVerifier();
     localStorage.setItem("spotify_code_verifier", codeVerifier);
+    // Remember where the user was so we can navigate back after token exchange
+    localStorage.setItem("spotify_return_path", window.location.pathname);
 
     try {
       const codeChallenge = await generateCodeChallenge(codeVerifier);
@@ -305,21 +255,10 @@ export function useSpotifyProvider(): UseSpotifyProviderResult {
   // ---- Init: handle auth callback or restore session on mount ----
   useEffect(() => {
     const init = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const code = urlParams.get("code");
-
-      if (code) {
-        // We're returning from the Spotify auth redirect
-        window.history.replaceState({}, document.title, window.location.pathname);
-        const accessToken = await getToken(code);
-        if (accessToken) {
-          await getUserInfo(accessToken);
-          await getPlaybackState(accessToken);
-        }
-        return;
-      }
-
-      // Try to restore an existing session
+      // Try to restore an existing session from localStorage.
+      // The actual OAuth code exchange is handled by the SpotifyCallback page
+      // at /spotify/callback — by the time this hook mounts, tokens are
+      // already in localStorage if the user has connected.
       const storedToken = localStorage.getItem("spotify_access_token");
       const expiresAtStr = localStorage.getItem("spotify_expires_at");
       const storedRefresh = localStorage.getItem("spotify_refresh_token");

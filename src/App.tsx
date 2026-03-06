@@ -4,6 +4,7 @@ import YouTubeQuickSession from "./pages/YouTubeQuickSession";
 import YouTubePlannedSession from "./pages/YouTubePlannedSession";
 import SpotifyQuickSession from "./pages/SpotifyQuickSession";
 import SpotifyPlannedSession from "./pages/SpotifyPlannedSession";
+import SpotifyCallback from "./pages/SpotifyCallback";
 import NTSQuickSession from "./pages/NTSQuickSession";
 import NTSPlannedSession from "./pages/NTSPlannedSession";
 
@@ -94,6 +95,7 @@ const App: React.FC = () => (
       <Route path="quick" element={<SpotifyQuickSession />} />
       <Route path="planned" element={<SpotifyPlannedSession />} />
     </Route>
+    <Route path="/spotify/callback" element={<SpotifyCallback />} />
 
     <Route path="/nts" element={<SourceLayout />}>
       <Route index element={<Navigate to="quick" replace />} />
