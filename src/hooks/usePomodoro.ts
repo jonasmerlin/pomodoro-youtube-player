@@ -119,6 +119,12 @@ export function usePomodoro(config: PomodoroConfig): PomodoroState {
   const endTimeRef = useRef<number>(0);
   const isRunningRef = useRef<boolean>(false);
   const timeLeftRef = useRef<number>(25 * 60);
+  // Tracks whether the timer has been started since the last reset. Used by
+  // the settings-sync effect to distinguish "paused" from "idle" — we only
+  // want to overwrite timeLeft with the settings value when the timer has
+  // never been started (or has been explicitly reset), NOT when the user
+  // merely pauses mid-session.
+  const hasBeenStartedRef = useRef<boolean>(false);
 
   // Keep refs in sync
   useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
@@ -165,9 +171,11 @@ export function usePomodoro(config: PomodoroConfig): PomodoroState {
 
   // ---- Sync timeLeft to quick-mode settings when not running ----
   // When the user changes workMinutes or breakMinutes while the timer is idle,
-  // update timeLeft so the display matches.
+  // update timeLeft so the display matches. We guard on hasBeenStartedRef so
+  // that pausing (isRunning → false) does NOT reset timeLeft. The ref is only
+  // cleared on explicit reset, making this safe.
   useEffect(() => {
-    if (mode !== "quick" || isRunning) return;
+    if (mode !== "quick" || isRunning || hasBeenStartedRef.current) return;
     if (isWorking) {
       setTimeLeft(workMinutes * 60);
     } else {
@@ -338,11 +346,15 @@ export function usePomodoro(config: PomodoroConfig): PomodoroState {
       }
       setTimerComplete(false);
     }
+    // Mark the timer as "has been started" so the settings-sync effect
+    // won't clobber timeLeft on pause.
+    hasBeenStartedRef.current = true;
     setIsRunning((prev) => !prev);
   }, [timerComplete, mode, workMinutes, flatIntervals]);
 
   const resetTimer = useCallback((): void => {
     setIsRunning(false);
+    hasBeenStartedRef.current = false;
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
